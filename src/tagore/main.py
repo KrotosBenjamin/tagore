@@ -2,20 +2,20 @@
 """
 tagore: a utility for illustrating human chromosomes
 https://github.com/jordanlab/tagore
+
+This script has been revised to use cairosvg instead of rsvg.
 """
 __author__ = ["Lavanya Rishishar", "Aroon Chande"]
 __copyright__ = "Copyright 2019, Applied Bioinformatics Lab"
 __license__ = "GPLv3"
 
-import os
 import pickle
-import pkgutil
-import re
 import shutil
-import subprocess
-import sys
-from argparse import ArgumentParser, HelpFormatter
+import pkgutil
 import cairosvg
+import subprocess
+import os, re, sys
+from argparse import ArgumentParser, HelpFormatter
 
 VERSION = "1.1.2"
 
@@ -277,6 +277,21 @@ def draw(parsed_args, svg_header, svg_footer):
     printif(f"\033[92mSuccessfully created SVG\033[0m", parsed_args.verbose)
 
 
+def convert_svg_to_format(svg_path, output_path, output_format, verbose=False):
+    """Convert SVG to the specified format using CairoSVG."""
+    try:
+        if output_format == 'png':
+            cairosvg.svg2png(url=svg_path, write_to=output_path)
+        elif output_format == 'pdf':
+            cairosvg.svg2pdf(url=svg_path, write_to=output_path)
+        printif(f"\033[92mSuccessfully converted SVG to {output_format.upper()}\033[0m",
+                verbose)
+    except Exception as e:
+        printif(f"\033[91mFailed SVG to {output_format.upper()} conversion... {str(e)}\033[0m",
+                verbose)
+        raise
+
+
 def run():
     parsed_args = parse_arguments()
 
@@ -298,17 +313,17 @@ def run():
         else:
             print(f"\033[94mOverwriting existing file and saving to: {parsed_args.prefix}.svg\033[0m")
     else:
-        printif(f"\033[94mSaving to: {parsed_args.prefix}.svg\033[0m", parsed_args.verbose)
+        printif(f"\033[94mSaving to: {parsed_args.prefix}.svg\033[0m",
+                parsed_args.verbose)
 
     draw(parsed_args, svg_header, svg_footer)
 
+    printif(f"\033[94mConverting {parsed_args.prefix}.svg -> {parsed_args.prefix}.{parsed_args.oformat} \033[0m",
+            parsed_args.verbose)
+
     try:
-        if is_rsvg_installed():
-            subprocess.check_output(f"rsvg {parsed_args.prefix}.svg {parsed_args.prefix}.{parsed_args.oformat}", shell=True)
-        else:
-            subprocess.check_output(f"rsvg-convert -o {parsed_args.prefix}.{parsed_args.oformat} -f {parsed_args.oformat} {parsed_args.prefix}.svg", shell=True)
-    except subprocess.CalledProcessError as rsvg_e:
-        printif(f"\033[91mFailed SVG to PNG conversion...\033[0m", parsed_args.verbose)
-        raise rsvg_e
-    finally:
-        printif(f"\033[92mSuccessfully converted SVG to {parsed_args.oformat.upper()}\033[0m", parsed_args.verbose)
+        convert_svg_to_format(f"{parsed_args.prefix}.svg",
+                              f"{parsed_args.prefix}.{parsed_args.oformat}",
+                              parsed_args.oformat, parsed_args.verbose)
+    except Exception as e:
+        print(f"\033[91mConversion failed: {str(e)}\033[0m")
