@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 from argparse import ArgumentParser, HelpFormatter
+import cairosvg
 
 VERSION = "1.1.2"
 
@@ -100,26 +101,49 @@ CHROM_SIZES = {
     },
 }
 
+def parse_arguments():
+    """Parse and return command-line arguments."""
+    parser = ArgumentParser(
+        description="A utility for illustrating human chromosomes.",
+        formatter_class=lambda prog: HelpFormatter(prog, max_help_position=40,
+                                                   width=100)
+    )
+    parser.add_argument("-i", "--input", help="Input BED file", required=True)
+    parser.add_argument("-p", "--prefix", help="Prefix for output files",
+                        required=True)
+    parser.add_argument("-o", "--oformat", help="Output format (png or pdf)",
+                        choices=["png", "pdf"], default="png")
+    parser.add_argument("-f", "--force", help="Force overwrite of existing files",
+                        action="store_true")
+    parser.add_argument("-v", "--verbose", help="Increase output verbosity",
+                        action="store_true")
+    return parser.parse_args()
 
-def printif(statement, condition):
-    """
-    Print statements if a boolean (e.g. verbose) is true
-    """
+
+def printif(message, condition):
+    """Print message if verbose is enabled."""
     if condition:
-        print(statement)
+        print(message)
 
 
-def draw(arguments, svg_header, svg_footer):
-    """
-    Create the SVG object
-    """
+def is_rsvg_installed():
+    """Check if rsvg is installed."""
+    try:
+        subprocess.check_output(["which", "rsvg"])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def draw(parsed_args, svg_header, svg_footer):
+    """Draw chromosome ideogram"""
     polygons = ""
     try:
-        input_fh = open(arguments.input, "r")
+        input_fh = open(parsed_args.input, "r")
     except (IOError, EOFError) as input_fh_e:
         print("Error opening input file!")
         raise input_fh_e
-    svg_fn = f"{arguments.prefix}.svg"
+    svg_fn = f"{parsed_args.prefix}.svg"
     try:
         svg_fh = open(svg_fn, "w")
         svg_fh.write(svg_header)
@@ -163,10 +187,10 @@ def draw(arguments, svg_header, svg_footer):
         line_num = line_num + 1
         if feature == 0:  # Rectangle
             feat_start = (
-                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             )
             feat_end = (
-                stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+                stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             )
             width = COORDINATES[chrm]["width"] * size / 2
             if chrcopy == 1:
@@ -182,10 +206,10 @@ def draw(arguments, svg_header, svg_footer):
             )
         elif feature == 1:  # Circle
             feat_start = (
-                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             )
             feat_end = (
-                stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+                stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             )
             radius = COORDINATES[chrm]["width"] * size / 4
             if chrcopy == 1:
@@ -200,10 +224,10 @@ def draw(arguments, svg_header, svg_footer):
             )
         elif feature == 2:  # Triangle
             feat_start = (
-                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             )
             feat_end = (
-                stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+                stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             )
             if chrcopy == 1:
                 x_pos = COORDINATES[chrm]["cx"] - COORDINATES[chrm]["width"] / 2
@@ -220,9 +244,9 @@ def draw(arguments, svg_header, svg_footer):
             )
         elif feature == 3:  # Line
             y_pos1 = (
-                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+                start * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             )
-            y_pos2 = stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[arguments.build][chrm]
+            y_pos2 = stop * COORDINATES[chrm]["ht"] / CHROM_SIZES[parsed_args.build][chrm]
             y_pos = (y_pos1 + y_pos2) / 2
             y_pos += COORDINATES[chrm]["cy"]
             if chrcopy == 1:
@@ -250,146 +274,41 @@ def draw(arguments, svg_header, svg_footer):
     svg_fh.write(polygons)
     svg_fh.write("</svg>")
     svg_fh.close()
-    printif(f"\033[92mSuccessfully created SVG\033[0m", arguments.verbose)
+    printif(f"\033[92mSuccessfully created SVG\033[0m", parsed_args.verbose)
 
 
 def run():
-    parser = ArgumentParser(
-        prog="tagore",
-        add_help=True,
-        description="""
-                            tagore: a utility for illustrating human chromosomes
-                            https://github.com/jordanlab/tagore
-                            """,
-        formatter_class=lambda prog: HelpFormatter(
-            prog, width=120, max_help_position=120
-        ),
-    )
+    parsed_args = parse_arguments()
 
-    parser.add_argument(
-        "--version",
-        action="version",
-        help="Print the software version",
-        version="tagore (version {})".format(VERSION),
-    )
+    if parsed_args.oformat not in ["png", "pdf"]:
+        print(f"\033[93m{parsed_args.oformat} is not PNG or PDF, using PNG\033[0m")
+        parsed_args.oformat = "png"
 
-    # Input arguments
-    parser.add_argument(
-        "-i",
-        "--input",
-        required=True,
-        default=None,
-        metavar="<input.bed>",
-        help="Input BED-like file",
-    )
-    parser.add_argument(
-        "-p",
-        "--prefix",
-        required=False,
-        default="out",
-        metavar="[output file prefix]",
-        help='Output prefix [Default: "out"]',
-    )
-    parser.add_argument(
-        "-b",
-        "--build",
-        required=False,
-        default="hg38",
-        metavar="[hg78/hg38]",
-        help="Human genome build to use [Default: hg38]",
-    )
-    parser.add_argument(
-        "-f",
-        "--force",
-        required=False,
-        default=False,
-        help="Overwrite output files if they exist already",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-ofmt",
-        "--oformat",
-        required=False,
-        default="png",
-        help="Output format for conversion (pdf requires rsvg-convert)",
-        metavar="[png/pdf]",
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        required=False,
-        default=False,
-        help="Display verbose output",
-        action="store_true",
-    )
-    parsed_args, unknown_args = parser.parse_known_args()
-    if unknown_args:
-        print(
-            f"\033[93mOne or more unknown arguments were supplied:\033[0m {' '.join(unknown_args)}\n"
-        )
-        parser.print_help()
-        sys.exit()
-    if parsed_args.build not in ["hg37", "hg38"]:
-        print(
-            f"\033[91mBuild must be either 'hg37' or 'hg38', you supplied {parsed_args.build}.\033[0m"
-        )
-        sys.exit()
-
-    if shutil.which("rsvg-convert", mode=os.X_OK) is None:
-        if shutil.which("rsvg", mode=os.X_OK) is None:
-            print(f"\033[91mCould not find `rsvg` or `rsvg-convert` in PATH.\033[0m")
-            sys.exit()
-        else:
-            is_rsvg_installed = True
-            if parsed_args.oformat != "png":
-                print(f"\033[93m`rsvg` only supports PNG output, using png\033[0m")
-                parsed_args.oformat = "png"
-    else:
-        is_rsvg_installed = False
-        if parsed_args.oformat not in ["png", "pdf"]:
-            print(f"\033[93m{parsed_args.oformat} is not PNG or PDF, using PNG\033[0m")
-            parsed_args.oformat = "png"
     svg_pkl_data = pkgutil.get_data("tagore", "base.svg.p")
     svg_header, svg_footer = pickle.loads(svg_pkl_data)
-    printif(
-        f"\033[94mDrawing chromosome ideogram using {parsed_args.input}\033[0m",
-        parsed_args.verbose,
-    )
-    if os.path.exists(f"{parsed_args.prefix}.svg") and parsed_args.force is False:
+
+    printif(f"\033[94mDrawing chromosome ideogram using {parsed_args.input}\033[0m", parsed_args.verbose)
+
+    if os.path.exists(f"{parsed_args.prefix}.svg") and not parsed_args.force:
         print(f"\033[93m'{parsed_args.prefix}.svg' already exists.\033[0m")
         OW = input(f"Overwrite {parsed_args.prefix}.svg? [Y/n]: ") or "y"
         if OW.lower() != "y":
             print(f"\033[93m'tagore will now exit...\033[0m")
             sys.exit()
         else:
-            print(
-                f"\033[94mOverwriting existing file and saving to: {parsed_args.prefix}.svg\033[0m"
-            )
+            print(f"\033[94mOverwriting existing file and saving to: {parsed_args.prefix}.svg\033[0m")
     else:
-        printif(
-            f"\033[94mSaving to: {parsed_args.prefix}.svg\033[0m", parsed_args.verbose
-        )
+        printif(f"\033[94mSaving to: {parsed_args.prefix}.svg\033[0m", parsed_args.verbose)
+
     draw(parsed_args, svg_header, svg_footer)
-    printif(
-        f"\033[94mConverting {parsed_args.prefix}.svg -> {parsed_args.prefix}.{parsed_args.oformat} \033[0m",
-        parsed_args.verbose,
-    )
+
     try:
-        if is_rsvg_installed:
-            subprocess.check_output(
-                f"rsvg {parsed_args.prefix}.svg {parsed_args.prefix}.{parsed_args.oformat} ",
-                shell=True,
-            )
+        if is_rsvg_installed():
+            subprocess.check_output(f"rsvg {parsed_args.prefix}.svg {parsed_args.prefix}.{parsed_args.oformat}", shell=True)
         else:
-            subprocess.check_output(
-                f"rsvg-convert -o {parsed_args.prefix}.{parsed_args.oformat} -f {parsed_args.oformat} {parsed_args.prefix}.svg ",
-                shell=True,
-            )
+            subprocess.check_output(f"rsvg-convert -o {parsed_args.prefix}.{parsed_args.oformat} -f {parsed_args.oformat} {parsed_args.prefix}.svg", shell=True)
     except subprocess.CalledProcessError as rsvg_e:
         printif(f"\033[91mFailed SVG to PNG conversion...\033[0m", parsed_args.verbose)
         raise rsvg_e
     finally:
-        printif(
-            f"\033[92mSuccessfully converted SVG to {parsed_args.oformat.upper()}\033[0m",
-            parsed_args.verbose,
-        )
+        printif(f"\033[92mSuccessfully converted SVG to {parsed_args.oformat.upper()}\033[0m", parsed_args.verbose)
